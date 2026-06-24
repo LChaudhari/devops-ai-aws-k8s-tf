@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: user-service
-          image: 018442532737.dkr.ecr.ap-south-1.amazonaws.com/user-service:ddff5dd17cc2f48510639c5fba25c2255da388d7
+          image: 018442532737.dkr.ecr.ap-south-1.amazonaws.com/user-service:6d1a8bccd4953069af66f6443e6a1449fa2d1366
           ports:
             - containerPort: 3006
           env:
