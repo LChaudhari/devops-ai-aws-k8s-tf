@@ -44,3 +44,41 @@ password:
 # add password is PAT
 
 
+# Now make argocd sync with the github for that deploy the argocd.yml file
+# kubectl apply -f argo-cd.yml
+
+# Go to argocd localhost and sync with latest changes.
+# except postgresql and frontend all the pods will get erroe because of db not exist.
+
+# We need to re-run restore job to make all the pods healthy.
+# kubectl apply -f restore-job.yml 
+# kubectl get pods -n boutique
+# Still the pod showing unhealthy 
+# delete the pods so it will recreate auto
+
+# Now all the pods are healthy
+# test the service
+# kubectl get svc -n boutique
+# kubectl port-forward svc/gateway -n boutique 3001:3001
+# kubectl port-forward svc/frontend -n boutique 3005:3000
+
+# If I delete any deployment then I need to manually sync the argocd to make the deployment back running, but If I want it to do automatically the, update the argo-cd.yml file
+# kubectl apply -f argo-cd.yml
+
+# try to delete any deployment, then argocd make them in running state.
+# kubectl get deployments.apps -n boutique
+# kubectl get pods -n boutique 
+
+# Now check our monitoring Gra and Promth.
+# kubectl get pods -n monitoring
+# kubectl get svc -n monitoring
+
+# kubectl port-forward svc/kube-prometheus-stack-prometheus -n monitoring 9090:9090
+# kubectl port-forward svc/kube-prometheus-stack-grafana -n monitoring 3000:80
+
+# For login to grafana
+# for password enter cmd
+# kubectl get secret -n monitoring kube-prometheus-stack-grafana -o jsonpath="{.data.admin-password}" | base64 -d
+user: admin
+pas
+# In grafana go to Dashboard, Already created dashboard for services.
