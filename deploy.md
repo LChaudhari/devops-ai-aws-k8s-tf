@@ -11,6 +11,8 @@ added the backend.tf file
 # kubectl get pods
 # kubectl get pods -n argocd
 
+# I have go to gihub and added the secrets which is used for my ci.yml file
+
 
 
 
