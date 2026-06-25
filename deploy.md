@@ -20,6 +20,7 @@ Follow the steps in order. Each section says **what** you are doing and **why**.
 9. [Test the Application](#9-test-the-application)
 10. [Monitoring (Prometheus & Grafana)](#10-monitoring-prometheus--grafana)
 11. [Troubleshooting](#11-troubleshooting)
+12. [AIOps Assistant (Kira)](#12-aiops-assistant-kira)
 
 ---
 
@@ -305,78 +306,181 @@ In Grafana → **Dashboards**, a pre-built dashboard for the services is already
 
 ---
 
+## 12. AIOps Assistant (Kira)
+
+**What:** Deploy an AWS Bedrock Agent ("Kira") that answers operational questions
+— *"is my cluster healthy?"*, *"why the 503 errors?"* — by reading CloudWatch Logs,
+Prometheus metrics, and EKS health through three Lambda functions.
+**Why:** Adds an AI troubleshooting layer on top of the running cluster.
+
+```
+Streamlit UI (app.py) → Bedrock Agent (Kira) → 3 Lambdas
+   fetch_logs            → CloudWatch Logs
+   fetch_metrics         → Prometheus (ELB)
+   fetch_service_health  → EKS API + Prometheus
+```
+
+### 12.1 Forward pod logs to CloudWatch (Fluent Bit)
+
+**What:** Install Fluent Bit so pod logs land in CloudWatch (`/eks/boutique/pods`).
+**Why:** The `fetch_logs` Lambda reads its log events from there.
+
+```bash
+helm repo add aws https://aws.github.io/eks-charts
+helm repo update
+
+cd projects/Infrastructure
+ROLE_ARN=$(terraform output -raw fluent_bit_irsa_role_arn)
+
+helm upgrade --install aws-for-fluent-bit aws/aws-for-fluent-bit \
+  --namespace amazon-cloudwatch --create-namespace \
+  --set serviceAccount.create=true \
+  --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"=$ROLE_ARN \
+  --set cloudWatchLogs.enabled=true \
+  --set cloudWatchLogs.region=ap-south-1 \
+  --set cloudWatchLogs.logGroupName=/eks/boutique/pods \
+  --set cloudWatchLogs.logStreamPrefix=from-fluent-bit- \
+  --set cloudWatchLogs.autoCreateGroup=true \
+  --set firehose.enabled=false --set kinesis.enabled=false --set elasticsearch.enabled=false
+
+kubectl get pods -n amazon-cloudwatch
+```
+
+> Fluent Bit authenticates via **IRSA** (the `fluent_bit_irsa_role_arn` Terraform output).
+> Without it the pods can't reach the node role over IMDS (hop limit = 1) and every
+> CloudWatch write fails with *NoCredentialProviders*.
+
+### 12.2 Expose Prometheus to the Lambdas
+
+**What:** Switch the Prometheus service from `ClusterIP` to `LoadBalancer`.
+**Why:** `fetch_metrics` and `fetch_service_health` query Prometheus over HTTP, so it
+must be reachable from Lambda (which runs outside the cluster).
+
+```bash
+kubectl patch svc kube-prometheus-stack-prometheus -n monitoring \
+  -p '{"spec": {"type": "LoadBalancer"}}'
+
+kubectl get svc kube-prometheus-stack-prometheus -n monitoring
+# Copy the EXTERNAL-IP, e.g.:
+# http://a211fec40002e405caedf8ddbbc2e493-1104404187.ap-south-1.elb.amazonaws.com:9090
+```
+
+Put that URL — **including the `http://` prefix and `:9090` port** — in the
+`PROMETHEUS_URL` constant of both Lambda files:
+
+- `projects/Infrastructure/modules/lambda/fetch_metrics/lambda_function.py`
+- `projects/Infrastructure/modules/lambda/fetch_health/lambda_function.py`
+
+> `fetch_logs` does **not** use Prometheus (it reads CloudWatch Logs), so it needs no URL.
+> Make sure the ELB is internet-facing and its security group allows inbound `9090`.
+
+### 12.3 Deploy the Lambdas and IAM roles (Terraform)
+
+**What:** The `lambda` module creates the three functions plus two IAM roles.
+**Why:** Provisions everything the agent needs, as code.
+
+| Role | Used by | Permissions |
+|------|---------|-------------|
+| `aiops-lambda-role` | the 3 Lambdas | CloudWatch Logs read + EKS describe |
+| `aiops-bedrock-agent-role` | Bedrock Agent | Bedrock model invoke + Lambda invoke |
+
+```bash
+cd projects/Infrastructure
+terraform apply
+```
+
+> Re-run `terraform apply` whenever you edit a Lambda's `.py` — the module repackages and
+> redeploys via `source_code_hash`. **`deploy.sh` does NOT upload function code.**
+
+### 12.4 Create the Bedrock Agent
+
+**What:** Run `deploy.sh` to create the agent, attach the 3 action groups, and prepare it.
+**Why:** This wires the Lambdas to the model as callable tools.
+
+The agent uses **Nova Micro**, which in `ap-south-1` must be invoked through a
+cross-region inference profile (`apac.amazon.nova-micro-v1:0`) — already set on line 120
+of `deploy.sh`.
+
+```bash
+cd projects/aiops-assistant
+source .venv/bin/activate     # so the python3 inside deploy.sh has boto3
+./deploy.sh
+```
+
+At the end the script prints the **Agent ID** — keep it for the next step.
+
+> - **Model access is automatic** on first invoke (the old Bedrock "Model access" page is
+>   retired); no manual enable is needed for Amazon Nova models.
+> - If an agent already exists, `deploy.sh` **skips creation**. To change its model, delete
+>   the old one first, then re-run the script (it prints a new Agent ID):
+>   ```bash
+>   aws bedrock-agent delete-agent --agent-id <OLD_ID> \
+>     --skip-resource-in-use-check --region ap-south-1
+>   ```
+
+### 12.5 Run the Streamlit UI
+
+**What:** Launch the chat UI and point it at the agent.
+**Why:** This is how you talk to Kira.
+
+```bash
+cd projects/aiops-assistant
+cp .env.example .env          # if you don't already have one
+```
+
+Set these values in `.env`:
+
+```env
+AWS_REGION=ap-south-1
+BEDROCK_AGENT_ID=<agent id printed by deploy.sh>
+BEDROCK_AGENT_ALIAS_ID=TSTALIASID
+```
+
+Then run it inside the virtualenv:
+
+```bash
+source .venv/bin/activate
+streamlit run app.py          # opens http://localhost:8501
+```
+
+> Use a **virtualenv** — Debian's externally-managed Python blocks `pip install`
+> system-wide. Create it once:
+> ```bash
+> python3 -m venv .venv
+> ./.venv/bin/pip install -r requirements.txt
+> ```
+
+Now ask Kira: **"Is my cluster healthy?"** → *"cluster name is eks-cluster"*.
+
+---
+
 ## Cleanup
 
-When you're done, destroy everything to avoid charges:
+When you're done, destroy everything to avoid charges.
+
+**1. Tear down the Bedrock Agent and Fluent Bit (AIOps add-ons):**
+
+```bash
+aws bedrock-agent delete-agent --agent-id <AGENT_ID> \
+  --skip-resource-in-use-check --region ap-south-1
+helm uninstall aws-for-fluent-bit -n amazon-cloudwatch
+```
+
+**2. Destroy the infrastructure (EKS, VPC, ECR, Lambdas, IAM):**
 
 ```bash
 cd projects/Infrastructure
 terraform destroy
-
-kubectl config get-contexts 
-kubectl config get-contexts
-
-The three commands each remove one piece that aws eks update-kubeconfig had added:
-  kubectl config delete-context <name>   # the context (binds cluster+user)
-  kubectl config delete-cluster <name>   # the API server endpoint + CA
-  kubectl config delete-user <name>      # the auth/exec credentials
-In your case all three shared the same ARN-style name, so it was one name three times.
-
-
 ```
-</content>
-</invoke>
 
+**3. Remove the kubeconfig entries that `aws eks update-kubeconfig` added:**
 
+```bash
+kubectl config get-contexts                 # find the cluster's context name
+kubectl config delete-context <name>        # the context (binds cluster + user)
+kubectl config delete-cluster <name>        # the API server endpoint + CA
+kubectl config delete-user <name>           # the auth/exec credentials
+```
 
-# ###########################################################################################################
-
-# AIOPS
-
-# Add
-# helm repo add aws https://aws.github.io/eks-charts
-# helm repo update
-
-# Install aws-for-fluent-bit for generating the logs.
-
-ROLE_ARN=$(terraform output -raw fluent_bit_irsa_role_arn)
-
-  helm upgrade --install aws-for-fluent-bit aws/aws-for-fluent-bit \
-    --namespace amazon-cloudwatch --create-namespace \
-    --set serviceAccount.create=true \
-    --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"=$ROLE_ARN \
-    --set cloudWatchLogs.enabled=true \
-    --set cloudWatchLogs.region=ap-south-1 \
-    --set cloudWatchLogs.logGroupName=/eks/boutique/pods \
-    --set cloudWatchLogs.logStreamPrefix=from-fluent-bit- \
-    --set cloudWatchLogs.autoCreateGroup=true \
-    --set firehose.enabled=false --set kinesis.enabled=false --set elasticsearch.enabled=false
-
-# kubectl get pods -n amazon-cloudwatch
-
-### For lambda function we need to change the prometheus serivce from ClusterIP to Load Balancer
-# kubectl patch svc kube-prometheus-stack-prometheus -n monitoring -p '{"spec": {"type": "LoadBalancer"}}'
-# kubectl get svc kube-prometheus-stack-prometheus -n monitoring
-e.g http://a211fec40002e405caedf8ddbbc2e493-1104404187.ap-south-1.elb.amazonaws.com:9090
-# Add this url in fetch_logs and fetch_mettrics lambda functions
-
-# I have created the lambda function module in tf infra where I have created the roles and policies for lambda fnction cloudwatch and eks also craeted the iam role and policy for bedrock.
-
-# I have did the terrafrom apply for lambda modules
-
-# Then I have go to the aws bedrock service
-#search for model Nova Micro
-# In deploy.sh script change the model on line 120 e.g apac.amazon.nova-micro-v1:0
-go to the projects/aiops-assistance directory and run 
-#  source .venv/bin/activate
-# ./deploy.sh
-# craete the .env file
-#update the BEDROCK_AGENT_ID in .env file
-
-## Now will craeting the ui using streamlit
-
-cd /home/ah0049/Documents/DevOps_with_AI_tf_modules/devops-ai-aws-k8s-tf/projects/aiops-assistant
-pip install -r requirements.txt
-source .venv/bin/activate
-streamlit run app.py
+> All three usually share the same ARN-style name, so it's the same name used three times.
 
