@@ -222,7 +222,7 @@ if not config_ok:
     """, unsafe_allow_html=True)
 
     st.error("Missing Bedrock agent settings. Create a `.env` file with at least:")
-    st.code("""AWS_REGION=us-east-1
+    st.code("""AWS_REGION=ap-south-1
 BEDROCK_AGENT_ID=your_agent_id
 BEDROCK_AGENT_ALIAS_ID=TSTALIASID
 

@@ -12,8 +12,8 @@ spec:
   destination:
     server: 'https://kubernetes.default.svc'
     namespace: boutique
-  # syncPolicy: {}
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
+  syncPolicy: {}
+  # syncPolicy:
+  #   automated:
+  #     prune: true
+  #     selfHeal: true

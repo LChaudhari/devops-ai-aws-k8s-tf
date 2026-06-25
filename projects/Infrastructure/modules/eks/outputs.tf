@@ -21,3 +21,7 @@ output "node_group_arn" {
 output "node_group_status" {
   value = aws_eks_node_group.node_group.status
 }
+
+output "fluent_bit_irsa_role_arn" {
+  value = aws_iam_role.fluent_bit_irsa.arn
+}

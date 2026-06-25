@@ -20,7 +20,7 @@
 
 set -euo pipefail
 
-REGION="us-east-1"
+REGION="ap-south-1"
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 AGENT_ROLE_NAME="aiops-bedrock-agent-role"
 AGENT_NAME="aiops-assistant"
@@ -117,7 +117,7 @@ else
   AGENT_ID=$(aws bedrock-agent create-agent \
     --agent-name "$AGENT_NAME" \
     --agent-resource-role-arn "$AGENT_ROLE_ARN" \
-    --foundation-model "qwen.qwen3-32b-v1:0" \
+    --foundation-model "apac.amazon.nova-micro-v1:0" \
     --instruction "$AGENT_INSTRUCTION" \
     --region "$REGION" \
     --query 'agent.agentId' --output text)

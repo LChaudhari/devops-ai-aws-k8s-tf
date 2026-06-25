@@ -27,7 +27,7 @@ resource "aws_subnet" "subnets" {
   tags = {
     Name = "${var.vpc_name}-public-${count.index + 1}"
 
-    "kubernetes.io/role/elb" = "1"
+    "kubernetes.io/role/elb"                    = "1"
     "kubernetes.io/cluster/${var.cluster_name}" = "owned"
   }
 }

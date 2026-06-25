@@ -312,6 +312,71 @@ When you're done, destroy everything to avoid charges:
 ```bash
 cd projects/Infrastructure
 terraform destroy
+
+kubectl config get-contexts 
+kubectl config get-contexts
+
+The three commands each remove one piece that aws eks update-kubeconfig had added:
+  kubectl config delete-context <name>   # the context (binds cluster+user)
+  kubectl config delete-cluster <name>   # the API server endpoint + CA
+  kubectl config delete-user <name>      # the auth/exec credentials
+In your case all three shared the same ARN-style name, so it was one name three times.
+
+
 ```
 </content>
 </invoke>
+
+
+
+# ###########################################################################################################
+
+# AIOPS
+
+# Add
+# helm repo add aws https://aws.github.io/eks-charts
+# helm repo update
+
+# Install aws-for-fluent-bit for generating the logs.
+
+ROLE_ARN=$(terraform output -raw fluent_bit_irsa_role_arn)
+
+  helm upgrade --install aws-for-fluent-bit aws/aws-for-fluent-bit \
+    --namespace amazon-cloudwatch --create-namespace \
+    --set serviceAccount.create=true \
+    --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"=$ROLE_ARN \
+    --set cloudWatchLogs.enabled=true \
+    --set cloudWatchLogs.region=ap-south-1 \
+    --set cloudWatchLogs.logGroupName=/eks/boutique/pods \
+    --set cloudWatchLogs.logStreamPrefix=from-fluent-bit- \
+    --set cloudWatchLogs.autoCreateGroup=true \
+    --set firehose.enabled=false --set kinesis.enabled=false --set elasticsearch.enabled=false
+
+# kubectl get pods -n amazon-cloudwatch
+
+### For lambda function we need to change the prometheus serivce from ClusterIP to Load Balancer
+# kubectl patch svc kube-prometheus-stack-prometheus -n monitoring -p '{"spec": {"type": "LoadBalancer"}}'
+# kubectl get svc kube-prometheus-stack-prometheus -n monitoring
+e.g http://a211fec40002e405caedf8ddbbc2e493-1104404187.ap-south-1.elb.amazonaws.com:9090
+# Add this url in fetch_logs and fetch_mettrics lambda functions
+
+# I have created the lambda function module in tf infra where I have created the roles and policies for lambda fnction cloudwatch and eks also craeted the iam role and policy for bedrock.
+
+# I have did the terrafrom apply for lambda modules
+
+# Then I have go to the aws bedrock service
+#search for model Nova Micro
+# In deploy.sh script change the model on line 120 e.g apac.amazon.nova-micro-v1:0
+go to the projects/aiops-assistance directory and run 
+#  source .venv/bin/activate
+# ./deploy.sh
+# craete the .env file
+#update the BEDROCK_AGENT_ID in .env file
+
+## Now will craeting the ui using streamlit
+
+cd /home/ah0049/Documents/DevOps_with_AI_tf_modules/devops-ai-aws-k8s-tf/projects/aiops-assistant
+pip install -r requirements.txt
+source .venv/bin/activate
+streamlit run app.py
+

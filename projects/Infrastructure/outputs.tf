@@ -9,3 +9,7 @@
 # output "ecr_urls" {
 #   value = module.ecr.repository_urls
 # }
+
+output "fluent_bit_irsa_role_arn" {
+  value = module.eks.fluent_bit_irsa_role_arn
+}

@@ -75,3 +75,30 @@ variable "disk_size" {
 variable "repositories" {
   type = list(string)
 }
+
+# AIOps Lambda module
+
+variable "lambda_role_name" {
+  type        = string
+  description = "IAM execution role name shared by the AIOps Lambda functions"
+}
+
+variable "bedrock_agent_role_name" {
+  type        = string
+  description = "IAM role name assumed by the Bedrock Agent (Kira)"
+}
+
+variable "lambda_runtime" {
+  type        = string
+  description = "Runtime for the AIOps Lambda functions"
+}
+
+variable "lambda_timeout" {
+  type        = number
+  description = "Timeout (seconds) for the AIOps Lambda functions"
+}
+
+variable "log_group_name" {
+  type        = string
+  description = "CloudWatch log group the fetch_logs function reads from"
+}

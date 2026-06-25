@@ -39,3 +39,10 @@ repositories = [
   "product-service",
   "user-service"
 ]
+
+# AIOps Lambda module
+lambda_role_name        = "aiops-lambda-role"
+bedrock_agent_role_name = "aiops-bedrock-agent-role"
+lambda_runtime          = "python3.12"
+lambda_timeout          = 30
+log_group_name          = "/eks/boutique/pods"

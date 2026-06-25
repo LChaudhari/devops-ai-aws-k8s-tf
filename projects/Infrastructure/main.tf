@@ -32,6 +32,16 @@ module "ecr" {
   repositories = var.repositories
 }
 
+module "lambda" {
+  source = "./modules/lambda"
+
+  lambda_role_name        = var.lambda_role_name
+  bedrock_agent_role_name = var.bedrock_agent_role_name
+  lambda_runtime          = var.lambda_runtime
+  lambda_timeout          = var.lambda_timeout
+  log_group_name          = var.log_group_name
+}
+
 
 provider "kubernetes" {
   alias                  = "eks"

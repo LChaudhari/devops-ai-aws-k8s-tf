@@ -374,7 +374,7 @@ FETCH_LOGS_SCHEMA = """
     "/fetch_cloudwatch_logs": {
       "get": {
         "summary": "Fetch application logs from CloudWatch",
-        "description": "Searches CloudWatch Logs for entries matching a filter pattern within a time range. Use this when the user asks about errors, exceptions, warnings, or any application-level issues visible in logs. Available log groups: /app/production (eu-north-1) for application logs, /aws/eks/eks-cluster/cluster (us-east-1) for Kubernetes EKS cluster logs.",
+        "description": "Searches CloudWatch Logs for entries matching a filter pattern within a time range. Use this when the user asks about errors, exceptions, warnings, or any application-level issues visible in logs. Available log groups: /app/production (eu-north-1) for application logs, /aws/eks/eks-cluster/cluster (ap-south-1) for Kubernetes EKS cluster logs.",
         "operationId": "fetch_cloudwatch_logs",
         "parameters": [
           {
@@ -402,7 +402,7 @@ FETCH_LOGS_SCHEMA = """
             "name": "region",
             "in": "query",
             "required": false,
-            "description": "AWS region where the logs are stored. Use eu-north-1 for application logs (/app/production). Use us-east-1 for EKS cluster logs (/aws/eks/eks-cluster/cluster).",
+            "description": "AWS region where the logs are stored. Use eu-north-1 for application logs (/app/production). Use ap-south-1 for EKS cluster logs (/aws/eks/eks-cluster/cluster).",
             "schema": { "type": "string", "default": "eu-north-1" }
           }
         ],

@@ -28,7 +28,7 @@ resource "aws_eks_cluster" "eks" {
   version  = "1.34"
 
   vpc_config {
-    subnet_ids = var.subnet_ids
+    subnet_ids              = var.subnet_ids
     endpoint_public_access  = true
     endpoint_private_access = false
   }
@@ -82,11 +82,36 @@ resource "aws_iam_role_policy_attachment" "ecr_policy" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
 }
 
+resource "aws_iam_role_policy_attachment" "cloudwatch_policy" {
+  role       = aws_iam_role.eks_node_role.name
+  policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
+}
+
+# Inline policy: allow nodes to ship logs to CloudWatch Logs
+
+resource "aws_iam_role_policy" "node_cloudwatch_logs" {
+  name = "FluentBitCloudWatchLogsPolicy"
+  role = aws_iam_role.eks_node_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents",
+        "logs:DescribeLogStreams"
+      ]
+      Resource = "arn:aws:logs:*:*:*"
+    }]
+  })
+}
 
 # Node Group
 
 resource "aws_eks_node_group" "node_group" {
-  cluster_name    = aws_eks_cluster.eks.name 
+  cluster_name    = aws_eks_cluster.eks.name
   node_group_name = var.node_group_name
   node_role_arn   = aws_iam_role.eks_node_role.arn
   subnet_ids      = var.subnet_ids
@@ -106,7 +131,7 @@ resource "aws_eks_node_group" "node_group" {
   }
 
   tags = {
-    Terraform   = "true"
+    Terraform = "true"
   }
 
 
@@ -155,4 +180,53 @@ resource "aws_eks_addon" "ebs_csi" {
   depends_on = [
     aws_iam_role_policy_attachment.ebs_csi_irsa_policy
   ]
+}
+
+# IRSA for Fluent Bit (aws-for-fluent-bit) — ships pod logs to CloudWatch Logs
+
+data "aws_iam_policy_document" "fluent_bit_assume_role" {
+  statement {
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+
+    principals {
+      type        = "Federated"
+      identifiers = [aws_iam_openid_connect_provider.eks.arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "${replace(aws_eks_cluster.eks.identity[0].oidc[0].issuer, "https://", "")}:sub"
+      values   = ["system:serviceaccount:amazon-cloudwatch:aws-for-fluent-bit"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "${replace(aws_eks_cluster.eks.identity[0].oidc[0].issuer, "https://", "")}:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "fluent_bit_irsa" {
+  name               = "${var.cluster_name}-fluent-bit-irsa"
+  assume_role_policy = data.aws_iam_policy_document.fluent_bit_assume_role.json
+}
+
+resource "aws_iam_role_policy" "fluent_bit_cloudwatch_logs" {
+  name = "${var.cluster_name}-fluent-bit-cloudwatch-logs"
+  role = aws_iam_role.fluent_bit_irsa.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents",
+        "logs:DescribeLogStreams"
+      ]
+      Resource = "arn:aws:logs:*:*:*"
+    }]
+  })
 }
